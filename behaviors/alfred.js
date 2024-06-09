@@ -655,7 +655,7 @@ function parser() {
       build.onLoad({ filter: /src\/addonConfig\.ts/ }, (config) => {
         const content = fs.readFileSync(config.path).toString('utf-8');
         const inject = JSON.stringify(acesRuntime, null, 4).replace(/"(\(inst\) => inst\.[a-zA-Z0-9$_]+)"/, '$1');
-        const injected = content.replace(/(export\s+default\s+)([^;]+);/, `$1{\n...($2), \n...(${inject})\n};`);
+        const injected = content.replace(/(export\s+default\s+)([^;]+);/, `$1{\n...($2), \n...({Aces: ${inject}})\n};`);
         const jsConfig = esbuild.transformSync(injected, {
           loader: 'ts',
           tsconfigRaw: tsConfig,

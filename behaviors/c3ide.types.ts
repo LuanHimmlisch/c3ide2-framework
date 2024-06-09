@@ -114,21 +114,22 @@ export function loadAddonClass(addonBase: C3AddonBase & { [key: string]: any }, 
     Object.keys(config.Aces.actions).forEach((key) => {
         const ace = config.Aces.actions[key];
         addonBase.Acts[camel(key)] = function (...args: any) {
-            return ace.forward(this).call(this, ...args);
+            return ace(this).call(this, ...args);
         };
     });
 
     Object.keys(config.Aces.conditions).forEach((key) => {
         const ace = config.Aces.conditions[key];
+
         addonBase.Cnds[camel(key)] = function (...args: any) {
-            return ace.forward(this).call(this, ...args);
+            return ace(this).call(this, ...args);
         };
     });
 
     Object.keys(config.Aces.expressions).forEach((key) => {
         const ace = config.Aces.expressions[key];
         addonBase.Exps[camel(key)] = function (...args: any) {
-            return ace.forward(this).call(this, ...args);
+            return ace(this).call(this, ...args);
         };
     });
 }
@@ -291,7 +292,7 @@ declare global {
         [any: string]: any;
     }
 
-    type combo = string;
+    type combo = number;
     type cmp = string;
     type objectname = string;
     type layer = string;
