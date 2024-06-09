@@ -672,7 +672,7 @@ function parser() {
   };
 }
 
-let _buildConfig = null;
+let _buildConfig;
 
 /** @returns {Promise<import('./c3ide.types.js').BuildConfig | {}>} */
 async function loadBuildConfig() {
@@ -682,6 +682,7 @@ async function loadBuildConfig() {
 
   if (fs.existsSync('./c3ide.config.js')) {
     _buildConfig = await import('./c3ide.config.js').then(v => v.default);
+    return _buildConfig;
   }
 
   return _buildConfig = {};
