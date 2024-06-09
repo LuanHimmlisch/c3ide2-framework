@@ -23,6 +23,14 @@ export interface AddonConfig extends ProjectAddon {
     };
 }
 
+export interface BuiltAddonConfig extends AddonConfig {
+    Aces: {
+        actions: any,
+        expressions: any,
+        conditions: any
+    }
+};
+
 export interface BuildConfig {
     minify?: boolean,
 }
@@ -56,6 +64,101 @@ export function camel(str: string) {
     camelCasedMap.set(str, result);
 
     return result;
+}
+
+/* ===============
+ * Generators
+ ================ */
+
+export function getBehaviorClass() {
+    return class extends globalThis.ISDKBehaviorBase {
+        constructor() {
+            super();
+        }
+
+        _release() {
+            super._release();
+        }
+    }
+}
+
+export function getBehaviorTypeClass() {
+    return class extends globalThis.ISDKBehaviorTypeBase {
+        constructor() {
+            super();
+        }
+
+        _release() {
+            super._release();
+        }
+    };
+}
+
+export function getBehaviorInstanceClass() {
+    return class extends globalThis.ISDKBehaviorInstanceBase {
+        constructor() {
+            super();
+        }
+
+        _release() {
+            super._release();
+        }
+    };
+}
+
+export function loadAddonClass(addonBase: C3AddonBase & { [key: string]: any }, config: BuiltAddonConfig) {
+    addonBase.Acts = {};
+    addonBase.Cnds = {};
+    addonBase.Exps = {};
+
+    Object.keys(config.Aces.actions).forEach((key) => {
+        const ace = config.Aces.actions[key];
+        addonBase.Acts[camel(key)] = function (...args: any) {
+            return ace.forward(this).call(this, ...args);
+        };
+    });
+
+    Object.keys(config.Aces.conditions).forEach((key) => {
+        const ace = config.Aces.conditions[key];
+        addonBase.Cnds[camel(key)] = function (...args: any) {
+            return ace.forward(this).call(this, ...args);
+        };
+    });
+
+    Object.keys(config.Aces.expressions).forEach((key) => {
+        const ace = config.Aces.expressions[key];
+        addonBase.Exps[camel(key)] = function (...args: any) {
+            return ace.forward(this).call(this, ...args);
+        };
+    });
+}
+
+/**
+ * Automatically sets the Addon base, type and instance classes depending your configuration
+ * 
+ * You can choose to manually set the classes, just copy this method as example.
+ * 
+ * @param {BuiltAddonConfig} config
+ * @see `loadAddonClass()`
+ */
+export function initAddon(config: BuiltAddonConfig, {
+    Base = null,
+    Type = null,
+    Instance = null,
+}: InitAddonOpts) {
+    //TODO: This should guess the type of Addon and inject accordingly
+
+    const C3 = globalThis.C3;
+
+    const B_C = C3.Behaviors[config.id] = Base ?? getBehaviorClass();
+
+    B_C.Type = Type ?? getBehaviorTypeClass();
+
+    B_C.Instance = Instance ?? getBehaviorInstanceClass();
+
+    loadAddonClass(B_C, config)
+
+    return B_C;
 }
 
 /* ===============
@@ -157,6 +260,15 @@ export function Param(opts?: IParam): ParameterDecorator {
 /* ===============
  * Global suggar
  ================ */
+
+// TODO: check way to threat `ISDK*Base` as classes without loosing the globalThis.
+type C3AddonBase = any;
+
+interface InitAddonOpts {
+    Base?: any;
+    Type?: any;
+    Instance?: any;
+}
 
 type C3Type = combo
     | cmp

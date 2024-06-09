@@ -11,6 +11,7 @@ import escodegen from 'escodegen';
 
 const args = process.argv.slice(2);
 const devBuild = args.includes("--dev");
+const tsConfig = fs.readFileSync('./tsconfig.json').toString('utf8');
 
 function removeFilesRecursively(dir) {
   if (fs.existsSync(dir)) {
@@ -501,9 +502,9 @@ function distribute(config) {
   zip.writeZip(`./dist/${config.id}-${config.version}.c3addon`);
 }
 
-export function readTsConfig(tsConfig = '', { loader = 'ts' } = {}) {
+export function readAddonConfig(tsAddonConfig = '', { loader = 'ts' } = {}) {
   let config = new Function(
-    esbuild.transformSync(tsConfig, {
+    esbuild.transformSync(tsAddonConfig, {
       format: 'iife',
       globalName: 'config',
       loader
@@ -542,7 +543,6 @@ function parser() {
       build.onLoad({ filter: /src\/instance\.ts/ }, (args) => {
         let ts = fs.readFileSync(args.path).toString('utf-8');
         let offset = 0;
-        // console.log(ts);
         const tree = acorn.Parser.extend(tsPlugin()).parse(ts, {
           ecmaVersion: '2021',
           sourceType: 'module',
@@ -605,8 +605,12 @@ function parser() {
           const category = config.category ?? 'general';
 
           const params = method.params?.map((v) => {
+            if (v.decorators) {
+              v.decorators.forEach(v => removeDecorator(v));
+            }
             return formatParam(v);
           }) ?? [];
+
 
           let displayText = decoratorParams[0]?.value;
 
@@ -639,21 +643,26 @@ function parser() {
           });
 
         });
+
+        return {
+          contents: esbuild.transformSync(ts, {
+            loader: 'ts',
+            tsconfigRaw: tsConfig,
+          }).code
+        }
       });
 
       build.onLoad({ filter: /src\/addonConfig\.ts/ }, (config) => {
         const content = fs.readFileSync(config.path).toString('utf-8');
         const inject = JSON.stringify(acesRuntime, null, 4).replace(/"(\(inst\) => inst\.[a-zA-Z0-9$_]+)"/, '$1');
         const injected = content.replace(/(export\s+default\s+)([^;]+);/, `$1{\n...($2), \n...(${inject})\n};`);
-        // console.log(injected);
         const jsConfig = esbuild.transformSync(injected, {
-          format: 'esm',
-          target: 'ES2021',
           loader: 'ts',
+          tsconfigRaw: tsConfig,
         }).code;
 
         try {
-          addonJson = readTsConfig(jsConfig, { loader: 'js' });
+          addonJson = readAddonConfig(jsConfig, { loader: 'js' });
         } catch (error) {
           throw Error("Error on `addonConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
         }
@@ -693,10 +702,10 @@ async function parseFile(file = '', plugins = []) {
   return await esbuild.build({
     entryPoints: [file],
     bundle: true,
-    target: 'ES2021',
     allowOverwrite: true,
     plugins,
     write: false,
+    tsconfigRaw: tsConfig,
     minify: extra?.minify ?? true,
   }).then(v => v.outputFiles[0].text);
 }

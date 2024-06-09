@@ -1,36 +1,10 @@
-import { Action, Condition, Expression, Param } from "../c3ide.types";
+import { Action, Condition, Trigger, Expression, Param } from "../c3ide.types";
+import { getBehaviorInstanceClass as parent } from '../c3ide.types';
 
-class Instance extends globalThis.ISDKBehaviorInstanceBase {
+class Instance extends parent() {
   constructor() {
     super();
-
-    const properties = this._getInitProperties();
-
-    if (properties) {
-
-    }
   }
-
-  @Condition()
-  isEnabled(
-    @Param({
-      desc: "A description",
-      items: [
-        { test: "test", }
-      ]
-    })
-    tag: combo
-  ) {
-    return ''
-  }
-
-  // @Condition('Is Other Enabled', { deprecated: true, highlight: true })
-  // isOtherEnabled(
-  //   tag: string,
-  //   wenas: any,
-  // ): string {
-  //   return ''
-  // }
 
   _release() {
     super._release();
