@@ -717,9 +717,9 @@ async function build() {
   const main = await parseFile('./src/behavior.ts', [parser()]);
   fs.writeFileSync("./export/c3runtime/behavior.js", main);
 
-  fs.writeFileSync("./export/aces.json", JSON.stringify(acesFromConfig(aces), null, 4));
+  fs.writeFileSync("./export/aces.json", JSON.stringify(acesFromConfig(aces), null, 2));
   fs.writeFileSync("./export/lang/en-US.json", JSON.stringify(langFromConfig(addonJson, aces), null, 2));
-  fs.writeFileSync("./export/addon.json", JSON.stringify(addonFromConfig(addonJson), null, 4));
+  fs.writeFileSync("./export/addon.json", JSON.stringify(addonFromConfig(addonJson), null, 2));
 
   const editor = await parseFile('./src/editor.ts');
   fs.writeFileSync("./export/editor.js", editor);
