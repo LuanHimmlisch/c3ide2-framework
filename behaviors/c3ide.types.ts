@@ -23,6 +23,10 @@ export interface AddonConfig extends ProjectAddon {
     };
 }
 
+export interface BuildConfig {
+    minify?: boolean,
+}
+
 const camelCasedMap = new Map();
 
 export function camel(str: string) {
@@ -53,6 +57,10 @@ export function camel(str: string) {
 
     return result;
 }
+
+/* ===============
+ * Interfaces
+ ================ */
 
 interface IAction {
     displayText?: string;
@@ -100,34 +108,55 @@ interface IParam {
     allowedPluginIds?: string[];
 }
 
+/* ===============
+ * ACEs Decorators
+ ================ */
+
 /**
- * Decorator to assign an Action
+ * Action decorator
  */
 export function Action(displayText?: string, opts?: IAction): MethodDecorator {
     return function (target) {
     };
 }
 
+/**
+ * Expression decorator
+ */
 export function Expression(opts?: IExpression): MethodDecorator {
     return function (target) {
     };
 }
 
+/**
+ * Condition decorator
+ */
 export function Condition(displayText?: string, opts?: ICondition): MethodDecorator {
     return function (target) {
     };
 }
 
+/**
+ * Shortcut for Condition decorator with `isTrigger` as `true`
+ */
 export function Trigger(displayText?: string, opts?: ICondition): MethodDecorator {
     return function (target) {
     };
 }
 
+/**
+ * ACE Parameter decorator. 
+ * 
+ * Use `string`, `number`, `any`,`Cnd.*`, `Act.*`, `Effect.*` for types
+ */
 export function Param(opts?: IParam): ParameterDecorator {
     return function () {
     }
 }
 
+/* ===============
+ * Global suggar
+ ================ */
 
 type C3Type = combo
     | cmp

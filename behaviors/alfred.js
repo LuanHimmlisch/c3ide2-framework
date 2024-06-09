@@ -513,7 +513,7 @@ export function readTsConfig(tsConfig = '', { loader = 'ts' } = {}) {
   try {
     config = config().default;
   } catch (error) {
-    throw Error("Error on reading `behaviorConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
+    throw Error("Error on reading `addonConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
   }
 
   for (const key in ACE_TYPES) {
@@ -641,7 +641,7 @@ function parser() {
         });
       });
 
-      build.onLoad({ filter: /src\/behaviorConfig\.ts/ }, (config) => {
+      build.onLoad({ filter: /src\/addonConfig\.ts/ }, (config) => {
         const content = fs.readFileSync(config.path).toString('utf-8');
         const inject = JSON.stringify(acesRuntime, null, 4).replace(/"(\(inst\) => inst\.[a-zA-Z0-9$_]+)"/, '$1');
         const injected = content.replace(/(export\s+default\s+)([^;]+);/, `$1{\n...($2), \n...(${inject})\n};`);
@@ -655,7 +655,7 @@ function parser() {
         try {
           addonJson = readTsConfig(jsConfig, { loader: 'js' });
         } catch (error) {
-          throw Error("Error on `behaviorConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
+          throw Error("Error on `addonConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
         }
 
         return {
@@ -672,15 +672,31 @@ function parser() {
   };
 }
 
+let _buildConfig = null;
+
+/** @returns {Promise<import('./c3ide.types.js').BuildConfig | {}>} */
+async function loadBuildConfig() {
+  if (_buildConfig) {
+    return _buildConfig;
+  }
+
+  if (fs.existsSync('./c3ide.config.js')) {
+    _buildConfig = await import('./c3ide.config.js').then(v => v.default);
+  }
+
+  return _buildConfig = {};
+}
+
 async function parseFile(file = '', plugins = []) {
+  const extra = await loadBuildConfig();
   return await esbuild.build({
     entryPoints: [file],
     bundle: true,
-    // minify: true,
     target: 'ES2021',
     allowOverwrite: true,
     plugins,
     write: false,
+    minify: extra?.minify ?? true,
   }).then(v => v.outputFiles[0].text);
 }
 

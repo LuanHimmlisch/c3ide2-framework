@@ -1,4 +1,4 @@
-import Config from "./behaviorConfig";
+import Config from "./addonConfig";
 
 const SDK = self.SDK;
 

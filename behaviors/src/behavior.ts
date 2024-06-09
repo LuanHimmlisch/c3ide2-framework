@@ -1,5 +1,5 @@
 import { AddonConfig, camel } from "../c3ide.types";
-import Config from "./behaviorConfig";
+import Config from "./addonConfig";
 import Instance from "./instance";
 
 const C3 = globalThis.C3;
