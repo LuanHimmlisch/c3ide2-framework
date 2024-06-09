@@ -1,8 +1,8 @@
+import Config from "./behaviorConfig";
+
 const SDK = self.SDK;
 
-//<-- BEHAVIOR_INFO -->
-
-let app = null;
+const BEHAVIOR_INFO = Config;
 
 SDK.Behaviors[BEHAVIOR_INFO.id] = class extends SDK.IBehaviorBase {
   constructor() {
@@ -26,52 +26,58 @@ SDK.Behaviors[BEHAVIOR_INFO.id] = class extends SDK.IBehaviorBase {
       BEHAVIOR_INFO.fileDependencies &&
       BEHAVIOR_INFO.fileDependencies.length
     ) {
-      BEHAVIOR_INFO.fileDependencies.forEach((file) => {
+      BEHAVIOR_INFO.fileDependencies.forEach((file: any) => {
         this._info.AddFileDependency({
           ...file,
-          filename: `c3runtime/${file.filename}`,
+          filename: `c3runtime/${file.filename}`
         });
       });
     }
 
-    if (BEHAVIOR_INFO.info && BEHAVIOR_INFO.info.Set)
+    if (BEHAVIOR_INFO.info && BEHAVIOR_INFO.info.Set) {
       Object.keys(BEHAVIOR_INFO.info.Set).forEach((key) => {
+        // @ts-ignore
         const value = BEHAVIOR_INFO.info.Set[key];
         const fn = this._info[`Set${key}`];
         if (fn && value !== null && value !== undefined)
           fn.call(this._info, value);
       });
+    }
+
     SDK.Lang.PushContext(".properties");
+
     this._info.SetProperties(
       (BEHAVIOR_INFO.properties || []).map(
-        (prop) => new SDK.PluginProperty(prop.type, prop.id, prop.options)
+        (prop: any) => new SDK.PluginProperty(prop.type, prop.id, prop.options)
       )
     );
+
     SDK.Lang.PopContext(); // .properties
     SDK.Lang.PopContext();
   }
 };
+
 const B_C = SDK.Behaviors[BEHAVIOR_INFO.id];
 B_C.Register(BEHAVIOR_INFO.id, B_C);
 
 B_C.Type = class extends SDK.IBehaviorTypeBase {
-  constructor(sdkPlugin, iObjectType) {
+  constructor(sdkPlugin: any, iObjectType: any) {
     super(sdkPlugin, iObjectType);
   }
 };
 
 B_C.Instance = class extends SDK.IBehaviorInstanceBase {
-  constructor(sdkType, inst) {
+  constructor(sdkType: any, inst: any) {
     super(sdkType, inst);
   }
 
-  Release() {}
+  Release() { }
 
-  OnCreate() {}
+  OnCreate() { }
 
-  OnPropertyChanged(id, value) {}
+  OnPropertyChanged(id: any, value: any) { }
 
-  LoadC2Property(name, valueString) {
+  LoadC2Property(name: any, valueString: any) {
     return false; // not handled
   }
 };
