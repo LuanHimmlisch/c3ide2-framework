@@ -2,7 +2,9 @@
 node_modules/
 
 # Ignore all files in the dist directory
+/dist
 /dist/*
 
 # Ignore all files in the export directory
+/export
 /export/*

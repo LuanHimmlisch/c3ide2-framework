@@ -1,4 +1,4 @@
-import { Action, Condition, Trigger, Expression, Param } from "../c3ide.types";
+import { AceClass, Action, Condition, Trigger, Expression, Param } from "../c3ide.types";
 import { getBehaviorInstanceClass as parent } from '../c3ide.types';
 
 const opts = [
@@ -6,13 +6,15 @@ const opts = [
   'something',
   'another',
 ];
+
+@AceClass()
 class Instance extends parent() {
   constructor() {
     super();
   }
 
   @Condition('Is "{0}" Something')
-  isEnabled(
+  isSomething(
     @Param({
       items: [
         { test: 'Test' },

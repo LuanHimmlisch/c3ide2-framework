@@ -32,7 +32,14 @@ export interface BuiltAddonConfig extends AddonConfig {
 };
 
 export interface BuildConfig {
-    minify?: boolean,
+    minify?: string,
+    host?: string,
+    port?: number,
+    defaultLang?: string,
+    runtimeScript?: string,
+    langPath?: string,
+    libPath?: string,
+    editorScripts?: string[],
 }
 
 const camelCasedMap = new Map();
@@ -255,6 +262,18 @@ export function Trigger(displayText?: string, opts?: ICondition): MethodDecorato
  */
 export function Param(opts?: IParam): ParameterDecorator {
     return function () {
+    }
+}
+
+export function AceClass(opts?: {}): ClassDecorator {
+    return function (target) {
+
+    }
+}
+
+export function Schema(opts?: {}): MethodDecorator {
+    return function (target) {
+
     }
 }
 
