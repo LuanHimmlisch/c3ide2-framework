@@ -9,6 +9,7 @@ import cors from 'cors';
 import chokidar from 'chokidar';
 import escodegen from 'escodegen';
 import { fileURLToPath, parse } from 'url';
+import { getByPath } from 'dot-path-value';
 
 const args = process.argv.slice(2);
 const devBuild = args.includes("--dev");
@@ -301,136 +302,181 @@ async function addonFromConfig(config, addon) {
   };
 }
 
-function langFromConfig(config, aces) {
-  let id = config.id.toLowerCase();
-  const lang = {
-    languageTag: "en-US",
-    fileDescription: `Strings for ${id}.`,
-    text: {},
-  };
+let _activeLang;
+let _langLoaded = {};
+function loadLanguage(lang) {
+  const path = filepath(_buildConfig.langPath, lang + ".json");
+  _activeLang = lang;
 
-  let root;
-  if (config.addonType === "plugin") {
-    lang.text.plugins = {};
-    lang.text.plugins[id] = {};
-    root = lang.text.plugins[id];
-  } else if (config.addonType === "behavior") {
-    lang.text.behaviors = {};
-    lang.text.behaviors[id] = {};
-    root = lang.text.behaviors[id];
-  } else if (config.addonType === "effect") {
-    lang.text.effects = {};
-    lang.text.effects[id] = {};
-    root = lang.text.effects[id];
-  } else {
-    throw new Error("Invalid addon type");
+  if (_langLoaded[lang]) {
+    return _langLoaded[lang];
   }
-  root.name = config.name;
-  root.description = config.description;
-  root["help-url"] = config.documentation;
-  root.aceCategories = config.aceCategories;
-  root.properties = {};
-  config.properties.forEach((property) => {
-    root.properties[property.id] = {
-      name: property.name,
-      desc: property.desc,
-    };
-    if (property.type === "combo") {
-      root.properties[property.id].items = {};
-      property.options.items.forEach((item) => {
-        const key = Object.keys(item)[0];
-        root.properties[property.id].items[key] = item[key];
-      });
-    } else if (property.type === "link") {
-      root.properties[property.id]["link-text"] = property.linkText;
+
+  if (!fs.existsSync(path)) {
+    return _langLoaded[lang] = {};
+  }
+
+  return _langLoaded[lang] = JSON.parse(fs.readFileSync(path, { encoding: 'utf-8' }));
+}
+
+function __(key) {
+  return getByPath(_langLoaded[_activeLang] ?? {}, key) ?? key;;
+}
+
+function langFromConfig(config, addon, aces) {
+  const jsonRegex = new RegExp("\\.json$");
+  const fileLangs = fs.readdirSync(filepath(config.langPath))
+    .filter((v) => v.match(jsonRegex))
+    .map((v) => v.replace(jsonRegex, ''));
+
+  const langs = [...new Set([
+    config.defaultLang,
+    ...fileLangs
+  ])];
+
+  let configs = {};
+
+  langs.forEach((languageTag) => {
+    loadLanguage(languageTag);
+    let id = addon.id.toLowerCase();
+
+    const lang = {
+      languageTag,
+      fileDescription: `Language ${languageTag} translation file for ${addon.name}.`,
+      text: {},
     }
-  });
 
-  const ungroupedAces = aceList();
+    let root;
+    if (addon.addonType === "plugin") {
+      lang.text.plugins = {};
+      lang.text.plugins[id] = {};
+      root = lang.text.plugins[id];
+    } else if (addon.addonType === "behavior") {
+      lang.text.behaviors = {};
+      lang.text.behaviors[id] = {};
+      root = lang.text.behaviors[id];
+    } else if (addon.addonType === "effect") {
+      lang.text.effects = {};
+      lang.text.effects[id] = {};
+      root = lang.text.effects[id];
+    } else {
+      throw new Error("Invalid addon type");
+    }
+    root.name = __(addon.name);
+    root.description = __(addon.description);
+    root["help-url"] = __(addon.documentation);
 
-  Object.keys(aces)
-    .reduce((dict, k) => {
-      for (const type in dict) {
-        dict[type] = [...dict[type], ...aces[k][type]];
-      }
-    }, ungroupedAces);
+    root.aceCategories = {};
+    for (const key in addon.aceCategories) {
+      root.aceCategories[key] = __(addon.aceCategories[key]);
+    }
 
-  root.actions = {};
-  Object.keys(ungroupedAces.actions).forEach((key) => {
-    const action = ungroupedAces.actions[key];
-    root.actions[action.id] = {
-      "list-name": action.listName,
-      "display-text": action.displayText,
-      description: action.description,
-      params: {},
-    };
-    action.params = action.params || [];
-    action.params.forEach((param) => {
-      root.actions[action.id].params[param.id] = {
-        name: param.name,
-        desc: param.desc,
+    root.properties = {};
+    addon.properties.forEach((property) => {
+      root.properties[property.id] = {
+        name: __(property.name),
+        desc: __(property.desc),
       };
-      if (param.type === "combo") {
-        root.actions[action.id].params[param.id].items = {};
-        param.items.forEach((item) => {
-          const itemkey = Object.keys(item)[0];
-          root.actions[key].params[param.id].items[itemkey] = item[itemkey];
+      if (property.type === "combo") {
+        root.properties[property.id].items = {};
+        property.options.items.forEach((item) => {
+          const key = Object.keys(item)[0];
+          root.properties[property.id].items[key] = __(item[key]);
         });
+      } else if (property.type === "link") {
+        root.properties[property.id]["link-text"] = __(property.linkText);
       }
     });
-  });
 
-  root.conditions = {};
-  Object.keys(ungroupedAces.conditions).forEach((key) => {
-    const condition = ungroupedAces.conditions[key];
-    root.conditions[condition.id] = {
-      "list-name": condition.listName,
-      "display-text": condition.displayText,
-      description: condition.description,
-      params: {},
-    };
-    condition.params = condition.params || [];
-    condition.params.forEach((param) => {
-      root.conditions[condition.id].params[param.id] = {
-        name: param.name,
-        desc: param.desc,
+    const ungroupedAces = aceList();
+
+    Object.keys(aces)
+      .reduce((dict, k) => {
+        for (const type in dict) {
+          dict[type] = [...dict[type], ...aces[k][type]];
+        }
+      }, ungroupedAces);
+
+    root.actions = {};
+    Object.keys(ungroupedAces.actions).forEach((key) => {
+      const action = ungroupedAces.actions[key];
+      root.actions[action.id] = {
+        "list-name": __(action.listName),
+        "display-text": __(action.displayText),
+        description: __(action.description),
+        params: {},
       };
-      if (param.type === "combo") {
-        root.conditions[condition.id].params[param.id].items = {};
-        (param.items ?? []).forEach((item) => {
-          const itemkey = Object.keys(item)[0];
-          root.conditions[condition.id].params[param.id].items[itemkey] = item[itemkey];
-        });
-      }
+      action.params = action.params || [];
+      action.params.forEach((param) => {
+        root.actions[action.id].params[param.id] = {
+          name: __(param.name),
+          desc: __(param.desc),
+        };
+
+        if (param.type === "combo") {
+          root.actions[action.id].params[param.id].items = {};
+          param.items.forEach((item) => {
+            const itemkey = Object.keys(item)[0];
+            root.actions[key].params[param.id].items[itemkey] = __(item[itemkey]);
+          });
+        }
+      });
     });
-  });
 
-  root.expressions = {};
-  Object.keys(ungroupedAces.expressions).forEach((key) => {
-    const expression = ungroupedAces.expressions[key];
-    root.expressions[expression.id] = {
-      "translated-name": key,
-      description: expression.description,
-      params: {},
-    };
-
-    expression.params = expression.params || [];
-    expression.params.forEach((param) => {
-      root.expressions[expression.id].params[param.id] = {
-        name: param.name,
-        desc: param.desc,
+    root.conditions = {};
+    Object.keys(ungroupedAces.conditions).forEach((key) => {
+      const condition = ungroupedAces.conditions[key];
+      root.conditions[condition.id] = {
+        "list-name": __(condition.listName),
+        "display-text": __(condition.displayText),
+        description: __(condition.description),
+        params: {},
       };
-      if (param.type === "combo") {
-        root.expressions[expression.id].params[param.id].items = {};
-        param.items.forEach((item) => {
-          const itemkey = Object.keys(item)[0];
-          root.expressions[expression.id].params[param.id].items[itemkey] = item[itemkey];
-        });
-      }
+      condition.params = condition.params || [];
+      condition.params.forEach((param) => {
+        root.conditions[condition.id].params[param.id] = {
+          name: __(param.name),
+          desc: __(param.desc),
+        };
+        if (param.type === "combo") {
+          root.conditions[condition.id].params[param.id].items = {};
+          (param.items ?? []).forEach((item) => {
+            const itemkey = Object.keys(item)[0];
+            root.conditions[condition.id].params[param.id].items[itemkey] = __(item[itemkey]);
+          });
+        }
+      });
     });
-  });
 
-  return lang;
+    root.expressions = {};
+    Object.keys(ungroupedAces.expressions).forEach((key) => {
+      const expression = ungroupedAces.expressions[key];
+      root.expressions[expression.id] = {
+        "translated-name": __(key),
+        description: __(expression.description),
+        params: {},
+      };
+
+      expression.params = expression.params || [];
+      expression.params.forEach((param) => {
+        root.expressions[expression.id].params[param.id] = {
+          name: __(param.name),
+          desc: __(param.desc),
+        };
+        if (param.type === "combo") {
+          root.expressions[expression.id].params[param.id].items = {};
+          param.items.forEach((item) => {
+            const itemkey = Object.keys(item)[0];
+            root.expressions[expression.id].params[param.id].items[itemkey] = __(item[itemkey]);
+          });
+        }
+      });
+    });
+
+    configs[languageTag] = lang;
+  }, {});
+
+  return configs;
 }
 
 function acesFromConfig(config) {
@@ -877,7 +923,14 @@ async function build() {
 
   fs.writeFileSync("./export/c3runtime/behavior.js", main);
   fs.writeFileSync("./export/aces.json", JSON.stringify(acesFromConfig(aces), null, 2));
-  fs.writeFileSync("./export/lang/en-US.json", JSON.stringify(langFromConfig(addonJson, aces), null, 2));
+
+  const langs = langFromConfig(config, addonJson, aces);
+
+  for (const lang in langs) {
+    const langFile = langs[lang];
+    fs.writeFileSync(filepath("./export/lang/", lang + ".json"), JSON.stringify(langFile, null, 2));
+  }
+
   fs.writeFileSync("./export/addon.json", JSON.stringify(await addonFromConfig(config, addonJson), null, 2));
 
   await Promise.all(
@@ -924,7 +977,7 @@ async function runServer(callback = async () => { }) {
   });
 
   function message() {
-    // process.stdout.write('\x1Bc');
+    process.stdout.write('\x1Bc');
     console.log(`|===| Alfred Butler |===|
 
 Server is running at ${host}:${port}
@@ -939,6 +992,7 @@ ${path()}
     await callback()
       .then(() => setTimeout(() => message(), 200))
       .catch(e => console.error(e));
+    _langLoaded = {};
   });
 
   // Create an express application
