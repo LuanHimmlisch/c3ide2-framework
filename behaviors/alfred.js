@@ -1,6 +1,6 @@
 import * as esbuild from 'esbuild';
 import fs from 'fs';
-import path from 'path';
+import path, { dirname, isAbsolute, join } from 'path';
 import * as acorn from 'acorn'
 import tsPlugin from 'acorn-typescript'
 import AdmZip from 'adm-zip';
@@ -8,10 +8,32 @@ import express from 'express';
 import cors from 'cors';
 import chokidar from 'chokidar';
 import escodegen from 'escodegen';
+import { fileURLToPath, parse } from 'url';
 
 const args = process.argv.slice(2);
 const devBuild = args.includes("--dev");
 const tsConfig = fs.readFileSync('./tsconfig.json').toString('utf8');
+
+function trimPathSlashes(str = '') {
+  return str.trim().replace(/^\.?(\/|\\)|(\\|\/)$/g, '');
+}
+
+function filepath(...paths) {
+  paths = path.join(...paths.map(v => trimPathSlashes(v)));
+
+  const fileUrl = new URL(paths, import.meta.url);
+  return fileURLToPath(fileUrl);
+}
+
+function fileExtension(filename = '') {
+  return filename.trim().match(/(?:\.([^.]+))?$/)[1]?.toLowerCase() ?? null;
+}
+
+function writeFileRecursively(path, contents) {
+  fs.mkdirSync(dirname(path), { recursive: true });
+  fs.writeFileSync(path, contents);
+}
+
 
 function removeFilesRecursively(dir) {
   if (fs.existsSync(dir)) {
@@ -29,10 +51,14 @@ function removeFilesRecursively(dir) {
   }
 }
 
-function ensureFoldersExists() {
+function emptyFolder() {
   if (fs.existsSync("./export")) {
     removeFilesRecursively("./export");
   }
+}
+
+function ensureFoldersExists() {
+  emptyFolder();
 
   fs.mkdirSync("./export");
   fs.mkdirSync("./export/lang");
@@ -77,6 +103,12 @@ const ACE_DECORATORS = {
 };
 
 const PARAM_DECORATOR = 'Param';
+
+const ALL_DECORATORS = [
+  'AceClass',
+  ...Object.keys(ACE_DECORATORS),
+  PARAM_DECORATOR,
+];
 
 const TS_Types = {
   'TSStringKeyword': 'string',
@@ -168,31 +200,90 @@ function aceList() {
   }, {});
 }
 
-function getFileListFromConfig(config) {
-  const files = [];
+const DEFAULT_IMPORT_TYPE = 'external-dom-script';
 
-  if (config.fileDependencies) {
-    config.fileDependencies.forEach(function (file) {
-      files.push(`c3runtime/${file.filename}`);
-    });
+function getImportTypeByExtension(ext) {
+  switch (ext) {
+    case 'css':
+      return 'external-css';
+
+    default:
+      return DEFAULT_IMPORT_TYPE;
   }
-
-  return files;
 }
 
-function addonFromConfig(config) {
+async function processDependencyFile(config, filename, ext, type) {
+  const input = filepath(config.libPath, filename);
+  const output = filepath('./export', '/c3runtime/libs', filename);
+
+  if (ext === 'ts') {
+    writeFileRecursively(output.replace(/\.ts$/, '.js'), await parseFile(input, config));
+    return output;
+  }
+
+  writeFileRecursively(output, fs.readFileSync(input));
+  return output;
+}
+
+
+/**
+ * @param {import('./c3ide.types.js').BuildConfig} config 
+ * @param {import('./c3ide.types.js').BuiltAddonConfig} addon 
+ */
+async function getFileListFromConfig(config, addon) {
+  const exportPath = filepath('./export');
+  const libPath = filepath(config.libPath);
+  const copyConfig = addon.fileDependencies;
+
+  const files = fs.readdirSync(libPath).map(async (filename) => {
+    const ext = fileExtension(filename);
+    let importType;
+
+    if (copyConfig[filename]) {
+      importType = copyConfig[filename];
+      delete copyConfig[filename];
+    } else {
+      importType = getImportTypeByExtension(ext);
+    }
+
+    let output = await processDependencyFile(
+      config,
+      filename,
+      ext,
+      importType
+    );
+
+    if (isAbsolute(output)) {
+      output = trimPathSlashes(output.replace(exportPath, ''));
+    }
+
+    return output;
+  });
+
+  // There's a mismatch betwwen the files from libs and 
+  // the files on the config... 
+  // TODO: Check if these are remote files
+  const leftFiles = Object.keys(copyConfig);
+  if (leftFiles.length) {
+    console.warn(`Following dependency files were not found: ${leftFiles.join(', ')}`);
+  }
+
+  return await Promise.all(files);
+}
+
+async function addonFromConfig(config, addon) {
   return {
     "is-c3-addon": true,
     "sdk-version": 2,
-    type: config.addonType,
-    name: config.name,
-    id: config.id,
-    version: config.version,
-    author: config.author,
-    website: config.website,
-    documentation: config.documentation,
-    description: config.description,
-    "editor-scripts": ["editor.js"],
+    type: addon.addonType,
+    name: addon.name,
+    id: addon.id,
+    version: addon.version,
+    author: addon.author,
+    website: addon.website,
+    documentation: addon.documentation,
+    description: addon.description,
+    "editor-scripts": addon?.editorScripts ?? [],
     "file-list": [
       "c3runtime/actions.js",
       "c3runtime/conditions.js",
@@ -203,9 +294,9 @@ function addonFromConfig(config) {
       "lang/en-US.json",
       "aces.json",
       "addon.json",
-      config.icon ? config.icon : "icon.svg",
+      addon.icon ? addon.icon : "icon.svg",
       "editor.js",
-      ...getFileListFromConfig(config),
+      ...(await getFileListFromConfig(config, addon)),
     ],
   };
 }
@@ -529,10 +620,165 @@ let aces;
 // Collection of ACEs to call on runtime
 let acesRuntime;
 
+/** @type {import('./c3ide.types.js').BuiltAddonConfig} */
 let addonJson;
 
-/** @returns {import('esbuild').Plugin} */
-function parser() {
+function hasDecorators(ts = '') {
+  const pattern = "@(" + ALL_DECORATORS.join('|') + ")";
+  const regex = new RegExp(pattern, 'ig');
+  const match = ts.match(regex);
+
+  if (!match) {
+    return;
+  }
+
+  // Detect comments
+  const decorator = ts.match(regex)[0];
+  const endAt = ts.indexOf(decorator);
+  const startAt = ts.slice(0, endAt).lastIndexOf('\n');
+  const lineBefore = ts.slice(startAt, endAt);
+
+  return !lineBefore.match(/(\/\*|\/\/)/);
+}
+
+/**
+ * @param {import('acorn').Program} tree 
+ */
+function searchTopClasses(tree) {
+  return tree.body.filter(node => node.type === 'ClassDeclaration');
+}
+
+/**
+ * @returns {esbuild.OnLoadResult|null|undefined} 
+ */
+function parseScript(ts) {
+  let offset = 0;
+  const tree = acorn.Parser.extend(tsPlugin()).parse(ts, {
+    ecmaVersion: '2021',
+    sourceType: 'module',
+    // TODO: Allow description via docblock
+    // onComment: (isBlock, text, s, e, loc, endLoc) => {
+    //   console.log(loc, endLoc);
+    // }
+  });
+
+  const removeDecorator = (decorator) => {
+    ts = ts.slice(0, decorator.start - offset) + ts.slice(decorator.end - offset)
+    offset += decorator.end - decorator.start;
+  }
+
+  /** @type {import('acorn').ClassDeclaration[]} */
+  const classes = searchTopClasses(tree);
+
+  // Probably this could be abstracted to its own function
+  classes.forEach(classDeclaration => {
+    const aceClass = classDeclaration?.decorators?.find((v) => v.expression?.callee?.name === 'AceClass');
+
+    if (!aceClass) {
+      return;
+    }
+
+    removeDecorator(aceClass);
+
+    /** @type {import('acorn').Node[]} */
+    const classFeatures = classDeclaration.body.body;
+    const methodAces = classFeatures.filter(v => v.type == 'MethodDefinition' && v.decorators?.length && Object.keys(ACE_DECORATORS).includes(v.decorators[0]?.expression.callee?.name));
+
+    methodAces.forEach(v => {
+      const id = v.key.name;
+      const title = titleCase(id);
+
+      if (v.decorators.length > 1) {
+        throw Error(`Method '${id}' can only be one ACE`);
+      }
+
+      const decorator = v.decorators[0];
+
+      const aceType = ACE_DECORATORS[decorator.expression.callee.name];
+      // ACE_TYPES[decorator.expression.callee.name];
+
+      if (!aceType) {
+        throw Error(`Unkown ACE operation on '${id}'`);
+      }
+
+      removeDecorator(decorator);
+
+      const decoratorParams = decorator.expression.arguments;
+
+      if (decoratorParams?.length > 1) {
+        if (decoratorParams.length > 2 || decoratorParams[1].type !== 'ObjectExpression') {
+          throw Error(`You must pass an object as option argument on '${id}' ACE`);
+        }
+      }
+
+      const config = getDecoratorParams(decoratorParams[1]);
+
+      let returnType = config?.returnType;
+
+      const method = v.value;
+
+      if (!returnType && method.returnType) {
+        returnType = getParserType(method.returnType);
+      }
+
+      const category = config.category ?? 'general';
+
+      const params = method.params?.map((v) => {
+        if (v.decorators) {
+          v.decorators.forEach(v => removeDecorator(v));
+        }
+        return formatParam(v);
+      }) ?? [];
+
+
+      let displayText = decoratorParams[0]?.value;
+
+      if (!displayText) {
+        // Auto-assign params to display text
+        if (params.length) {
+          displayText = title + " (" + Object.keys(params).map(v => `{${v}}`).join(', ') + ")";
+        } else {
+          displayText = title;
+        }
+      }
+
+      if (!aces[category]) {
+        aces[category] = {};
+        for (const type in ACE_TYPES) {
+          aces[category][type] = [];
+        }
+      }
+
+      acesRuntime[aceType][id] = `(inst) => inst.${id}`;
+      aces[category][aceType].push({
+        ...config,
+        id,
+        displayText,
+        listName: config.listName ?? title,
+        category,
+        params,
+        description: config.description ?? '',
+        ...(returnType ? { returnType } : {}),
+      });
+    });
+  });
+
+  return {
+    contents: esbuild.transformSync(ts, {
+      loader: 'ts',
+      tsconfigRaw: tsConfig,
+    }).code
+  }
+}
+
+/**
+ * @param {import('./c3ide.types.js').BuildConfig} config  
+ * @returns {import('esbuild').Plugin} 
+ */
+function parser(config) {
+  const parseFile = new RegExp("^" + filepath(config.sourcePath) + "(\\/|\\\\)\[^\\/\\\\]+\\.ts");
+  const addonScript = new RegExp(filepath(config.sourcePath, config.addonScript));
+
   return {
     name: 'c3ide-parser',
     setup(build) {
@@ -540,119 +786,18 @@ function parser() {
       acesRuntime = aceDict()
       addonJson = {}
 
-      build.onLoad({ filter: /src\/instance\.ts/ }, (args) => {
+      build.onLoad({ filter: parseFile }, (args) => {
         let ts = fs.readFileSync(args.path).toString('utf-8');
-        let offset = 0;
-        const tree = acorn.Parser.extend(tsPlugin()).parse(ts, {
-          ecmaVersion: '2021',
-          sourceType: 'module',
-          // TODO: Allow description via docblock
-          // onComment: (isBlock, text, s, e, loc, endLoc) => {
-          //   console.log(loc, endLoc);
-          // }
-        });
 
-        const className = tree.body.filter((v) => v.type === 'ExportDefaultDeclaration')[0].declaration.name;
-        const classDeclaration = tree.body.filter(v => v.type === 'ClassDeclaration' && v.id.name === className)[0];
-        /** @type {import('acorn').Node[]} */
-        const classFeatures = classDeclaration.body.body;
-
-        // console.log(classFeatures);
-        const methodAces = classFeatures.filter(v => v.type == 'MethodDefinition' && v.decorators?.length && Object.keys(ACE_DECORATORS).includes(v.decorators[0]?.expression.callee?.name));
-
-        const removeDecorator = (decorator) => {
-          ts = ts.slice(0, decorator.start - offset) + ts.slice(decorator.end - offset)
-          offset += decorator.end - decorator.start;
+        // match decorators
+        if (!hasDecorators(ts)) {
+          return;
         }
 
-        methodAces.forEach(v => {
-          const id = v.key.name;
-          const title = titleCase(id);
-
-          if (v.decorators.length > 1) {
-            throw Error(`Method '${id}' can only be one ACE`);
-          }
-
-          const decorator = v.decorators[0];
-
-          const aceType = ACE_DECORATORS[decorator.expression.callee.name];
-          // ACE_TYPES[decorator.expression.callee.name];
-
-          if (!aceType) {
-            throw Error(`Unkown ACE operation on '${id}'`);
-          }
-
-          removeDecorator(decorator);
-
-          const decoratorParams = decorator.expression.arguments;
-
-          if (decoratorParams?.length > 1) {
-            if (decoratorParams.length > 2 || decoratorParams[1].type !== 'ObjectExpression') {
-              throw Error(`You must pass an object as option argument on '${id}' ACE`);
-            }
-          }
-
-          const config = getDecoratorParams(decoratorParams[1]);
-
-          let returnType = config?.returnType;
-
-          const method = v.value;
-
-          if (!returnType && method.returnType) {
-            returnType = getParserType(method.returnType);
-          }
-
-          const category = config.category ?? 'general';
-
-          const params = method.params?.map((v) => {
-            if (v.decorators) {
-              v.decorators.forEach(v => removeDecorator(v));
-            }
-            return formatParam(v);
-          }) ?? [];
-
-
-          let displayText = decoratorParams[0]?.value;
-
-          if (!displayText) {
-            // Auto-assign params to display text
-            if (params.length) {
-              displayText = title + " (" + Object.keys(params).map(v => `{${v}}`).join(', ') + ")";
-            } else {
-              displayText = title;
-            }
-          }
-
-          if (!aces[category]) {
-            aces[category] = {};
-            for (const type in ACE_TYPES) {
-              aces[category][type] = [];
-            }
-          }
-
-          acesRuntime[aceType][id] = `(inst) => inst.${id}`;
-          aces[category][aceType].push({
-            ...config,
-            id,
-            displayText,
-            listName: config.listName ?? title,
-            category,
-            params,
-            description: config.description ?? '',
-            ...(returnType ? { returnType } : {}),
-          });
-
-        });
-
-        return {
-          contents: esbuild.transformSync(ts, {
-            loader: 'ts',
-            tsconfigRaw: tsConfig,
-          }).code
-        }
+        return parseScript(ts);
       });
 
-      build.onLoad({ filter: /src\/addonConfig\.ts/ }, (config) => {
+      build.onLoad({ filter: addonScript }, (config) => {
         const content = fs.readFileSync(config.path).toString('utf-8');
         const inject = JSON.stringify(acesRuntime, null, 4).replace(/"(\(inst\) => inst\.[a-zA-Z0-9$_]+)"/, '$1');
         const injected = content.replace(/(export\s+default\s+)([^;]+);/, `$1{\n...($2), \n...({Aces: ${inject}})\n};`);
@@ -672,11 +817,11 @@ function parser() {
         };
       });
 
-      build.onEnd(() => {
-        if (!devBuild) {
-          distribute(addonJson);
-        }
-      })
+      // build.onEnd(() => {
+      //   if (!devBuild) {
+      //     distribute(addonJson);
+      //   }
+      // })
     }
   };
 }
@@ -689,16 +834,28 @@ async function loadBuildConfig() {
     return _buildConfig;
   }
 
+  const defaultConfig = {
+    minify: true,
+    host: 'http://localhost',
+    port: 3000,
+    defaultLang: 'en-US',
+    sourcePath: 'src/',
+    langPath: 'src/lang',
+    libPath: 'src/libs',
+    addonScript: 'addon.ts',
+    runtimeScript: 'runtime.ts',
+  };
+
   if (fs.existsSync('./c3ide.config.js')) {
-    _buildConfig = await import('./c3ide.config.js').then(v => v.default);
+    const loadedConfig = await import('./c3ide.config.js').then(v => v.default);
+    _buildConfig = { ...defaultConfig, ...loadedConfig };
     return _buildConfig;
   }
 
-  return _buildConfig = {};
+  return _buildConfig = defaultConfig;
 }
 
-async function parseFile(file = '', plugins = []) {
-  const extra = await loadBuildConfig();
+async function parseFile(file = '', config = {}, plugins = []) {
   return await esbuild.build({
     entryPoints: [file],
     bundle: true,
@@ -706,23 +863,39 @@ async function parseFile(file = '', plugins = []) {
     plugins,
     write: false,
     tsconfigRaw: tsConfig,
-    minify: extra?.minify ?? true,
+    minify: config?.minify ?? true,
   }).then(v => v.outputFiles[0].text);
 }
 
 async function build() {
+  const config = await loadBuildConfig();
+
   ensureFoldersExists();
   createEmptyFiles();
 
-  const main = await parseFile('./src/behavior.ts', [parser()]);
-  fs.writeFileSync("./export/c3runtime/behavior.js", main);
+  const main = await parseFile(filepath(config.sourcePath, config.runtimeScript), config, [parser(config)]);
 
+  fs.writeFileSync("./export/c3runtime/behavior.js", main);
   fs.writeFileSync("./export/aces.json", JSON.stringify(acesFromConfig(aces), null, 2));
   fs.writeFileSync("./export/lang/en-US.json", JSON.stringify(langFromConfig(addonJson, aces), null, 2));
-  fs.writeFileSync("./export/addon.json", JSON.stringify(addonFromConfig(addonJson), null, 2));
+  fs.writeFileSync("./export/addon.json", JSON.stringify(await addonFromConfig(config, addonJson), null, 2));
 
-  const editor = await parseFile('./src/editor.ts');
-  fs.writeFileSync("./export/editor.js", editor);
+  await Promise.all(
+    addonJson.editorScripts.map(async (v) => {
+      if (!v.match(/\.(js|ts)$/)) {
+        throw Error(`Editor script path '${v}' is neither a JavaScript nor TypeScript path`);
+      }
+
+      const tsPath = v.trim().replace(/\.js$/, '.ts');
+      const jsPath = v.trim().replace(/\.ts$/, '.js');
+
+      const outpath = filepath('./export', jsPath);
+
+      return await parseFile(filepath(config.sourcePath, tsPath), config).then((editor) => {
+        return fs.writeFileSync(outpath, editor, { encoding: 'utf-8' });
+      });
+    })
+  );
 
   if (addonJson.icon) {
     fs.copyFileSync("./src/" + addonJson.icon, "./export/" + addonJson.icon);
@@ -735,7 +908,13 @@ async function build() {
 let port = 3000;
 
 async function runServer(callback = async () => { }) {
-  const path = () => `http://localhost:${port}/addon.json`;
+  const config = await loadBuildConfig();
+
+  port = config.port;
+
+  const host = config.host;
+
+  const path = () => `${host}:${port}/addon.json`;
 
   await callback();
 
@@ -745,10 +924,10 @@ async function runServer(callback = async () => { }) {
   });
 
   function message() {
-    process.stdout.write('\x1Bc');
+    // process.stdout.write('\x1Bc');
     console.log(`|===| Alfred Butler |===|
 
-Server is running at http://localhost:${port}
+Server is running at ${host}:${port}
 
 Import addon.json path:
 ${path()}
@@ -784,6 +963,7 @@ ${path()}
       port++;
       tryListen();
     } else {
+      emptyFolder();
       console.log(err);
       process.exit(1);
     }
@@ -797,5 +977,7 @@ if (devBuild) {
     build();
   });
 } else {
-  await build();
+  await build().then(() => {
+    distribute(addonJson);
+  });
 }

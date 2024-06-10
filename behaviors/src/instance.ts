@@ -42,4 +42,6 @@ class Instance extends parent() {
   }
 }
 
+export { Instance };
+
 export default Instance;

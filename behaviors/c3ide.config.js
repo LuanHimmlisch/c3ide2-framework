@@ -3,10 +3,10 @@ export default {
     minify: false,
     host: 'https://localhost',
     port: 3000,
-    runtimeScript: 'src/runtime.ts',
+    sourcePath: 'src/',
+    addonScript: 'addon.ts',
+    runtimeScript: 'runtime.ts',
     langPath: 'src/lang',
     libPath: 'src/libs',
-    editorScripts: [
-        'src/editor.ts'
-    ],
+    // TODO: Add export, examples, dist paths...
 }

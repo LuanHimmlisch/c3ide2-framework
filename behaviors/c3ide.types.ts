@@ -1,19 +1,18 @@
 import { Property, ProjectAddon } from "c3ide2-types";
 
 export interface AddonConfig extends ProjectAddon {
+    editorScripts?: string[];
     properties: Property[];
     aceCategories: {
         [key: string]: string;
     };
-    fileDependencies: Array<{
-        filename: string;
-        type:
-        | "copy-to-output"
+    fileDependencies: {
+        [key: string]: "copy-to-output"
         | "inline-script"
         | "external-dom-script"
         | "external-runtime-script"
-        | "external-css";
-    }>;
+        | "external-css"
+    },
     info: {
         Set: {
             IsOnlyOneAllowed: boolean;
@@ -35,11 +34,12 @@ export interface BuildConfig {
     minify?: string,
     host?: string,
     port?: number,
+    sourcePath?: string,
+    addonScript?: string,
     defaultLang?: string,
     runtimeScript?: string,
     langPath?: string,
     libPath?: string,
-    editorScripts?: string[],
 }
 
 const camelCasedMap = new Map();

@@ -14,6 +14,7 @@ const Config = {
   icon: "icon.svg",
   addonUrl: 'https://www.construct.net/addons/####/XXXX',
   githubUrl: "https://github.com/skymen/XXXX",
+  editorScripts: ['editor.js'],
   info: {
     Set: {
       IsOnlyOneAllowed: false,
@@ -22,7 +23,7 @@ const Config = {
     },
   },
   fileDependencies: {
-    anotherLib: 'copy-to-output'
+    "anotherLib.ts": 'copy-to-output'
   },
   properties: [
     {
