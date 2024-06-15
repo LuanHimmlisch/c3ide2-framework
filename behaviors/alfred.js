@@ -215,10 +215,11 @@ function getImportTypeByExtension(ext) {
 
 async function processDependencyFile(config, filename, ext, type) {
   const input = filepath(config.libPath, filename);
-  const output = filepath('./export', '/c3runtime/libs', filename);
+  let output = filepath('./export', '/c3runtime/libs', filename);
+  output = output.replace(/\.ts$/, '.js');
 
   if (ext === 'ts') {
-    writeFileRecursively(output.replace(/\.ts$/, '.js'), await parseFile(input, config));
+    writeFileRecursively(output, await parseFile(input, config));
     return output;
   }
 
