@@ -74,7 +74,7 @@ export function camel(str: string) {
 }
 
 /* ===============
- * Generators
+ * Runtime classes
  ================ */
 
 export function getBehaviorClass() {
@@ -109,6 +109,95 @@ export function getBehaviorInstanceClass() {
 
         _release() {
             super._release();
+        }
+    };
+}
+
+/* ===============
+ * Editor Classes
+ ================ */
+
+export function getEditorBehaviorClass(config: BuiltAddonConfig) {
+    const SDK = self.SDK;
+
+    return class extends SDK.IBehaviorBase {
+        constructor() {
+            super(config.id);
+
+            SDK.Lang.PushContext("behaviors." + config.id.toLowerCase());
+
+            this._info.SetName(self.lang(".name"));
+            this._info.SetDescription(self.lang(".description"));
+            this._info.SetCategory(config.category);
+            this._info.SetAuthor(config.author);
+            this._info.SetHelpUrl(self.lang(".help-url"));
+
+            if (config.icon) {
+                this._info.SetIcon(
+                    config.icon,
+                    config.icon.endsWith(".svg") ? "image/svg+xml" : "image/png"
+                );
+            }
+
+            if (
+                config.fileDependencies &&
+                config.fileDependencies.length
+            ) {
+                // TODO: Check this part
+                // config.fileDependencies.forEach((file: any) => {
+                //     this._info.AddFileDependency({
+                //         ...file,
+                //         filename: `c3runtime/${file.filename}`
+                //     });
+                // });
+            }
+
+            if (config.info && config.info.Set) {
+                Object.keys(config.info.Set).forEach((key) => {
+                    // @ts-ignore
+                    const value = config.info.Set[key];
+                    const fn = this._info[`Set${key}`];
+                    if (fn && value !== null && value !== undefined)
+                        fn.call(this._info, value);
+                });
+            }
+
+            SDK.Lang.PushContext(".properties");
+
+            this._info.SetProperties(
+                (config.properties || []).map(
+                    (prop: any) => new SDK.PluginProperty(prop.type, prop.id, prop.options)
+                )
+            );
+
+            SDK.Lang.PopContext(); // .properties
+            SDK.Lang.PopContext();
+        }
+    };
+}
+
+export function getEditorBehaviorTypeClass(config: BuiltAddonConfig) {
+    return class extends SDK.IBehaviorTypeBase {
+        constructor(sdkPlugin: any, iObjectType: any) {
+            super(sdkPlugin, iObjectType);
+        }
+    };
+}
+
+export function getEditorBehaviorInstanceClass(config: BuiltAddonConfig) {
+    return class extends SDK.IBehaviorInstanceBase {
+        constructor(sdkType: any, inst: any) {
+            super(sdkType, inst);
+        }
+
+        Release() { }
+
+        OnCreate() { }
+
+        OnPropertyChanged(id: any, value: any) { }
+
+        LoadC2Property(name: any, valueString: any) {
+            return false; // not handled
         }
     };
 }
@@ -153,7 +242,7 @@ export function initAddon(config: BuiltAddonConfig, {
     Base = null,
     Type = null,
     Instance = null,
-}: InitAddonOpts) {
+}: InitAddonOpts = {}) {
     //TODO: This should guess the type of Addon and inject accordingly
 
     const C3 = globalThis.C3;
@@ -167,6 +256,22 @@ export function initAddon(config: BuiltAddonConfig, {
     loadAddonClass(B_C, config)
 
     return B_C;
+}
+
+export function initEditorAddon(config: BuiltAddonConfig, {
+    Base = null,
+    Type = null,
+    Instance = null
+}: InitAddonOpts = {}) {
+    const SDK = self.SDK;
+
+    const B_C = SDK.Behaviors[config.id] = Base ?? getEditorBehaviorClass(config);
+
+    B_C.Register(config.id, B_C);
+
+    B_C.Type = Type ?? getEditorBehaviorTypeClass(config);
+
+    B_C.Instance = Instance ?? getEditorBehaviorInstanceClass(config);
 }
 
 /* ===============
