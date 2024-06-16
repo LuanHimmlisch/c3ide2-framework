@@ -1,4 +1,5 @@
 import { Property, ProjectAddon } from "c3ide2-types";
+import mime from 'mime';
 
 export interface AddonConfig extends ProjectAddon {
     editorScripts?: string[];
@@ -139,17 +140,20 @@ export function getEditorBehaviorClass(config: BuiltAddonConfig) {
                 );
             }
 
-            if (
-                config.fileDependencies &&
-                config.fileDependencies.length
-            ) {
-                // TODO: Check this part
-                // config.fileDependencies.forEach((file: any) => {
-                //     this._info.AddFileDependency({
-                //         ...file,
-                //         filename: `c3runtime/${file.filename}`
-                //     });
-                // });
+            if (config.fileDependencies) {
+                Object.keys(config.fileDependencies).forEach((filename: any) => {
+                    const type = config.fileDependencies[filename];
+                    const dependency = {
+                        filename,
+                        type
+                    } as any;
+
+                    if (type === 'copy-to-output') {
+                        dependency.fileType = mime.getType(filename);
+                    }
+
+                    this._info.AddFileDependency(dependency);
+                });
             }
 
             if (config.info && config.info.Set) {

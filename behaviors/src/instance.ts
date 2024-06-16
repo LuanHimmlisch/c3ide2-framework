@@ -13,6 +13,11 @@ class Instance extends parent() {
     super();
   }
 
+  @Condition()
+  isEnabled() {
+    return true;
+  }
+
   @Condition('Is "{0}" Something')
   isSomething(
     @Param({

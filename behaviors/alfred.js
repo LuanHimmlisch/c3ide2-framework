@@ -237,7 +237,8 @@ async function getFileListFromConfig(config, addon) {
   const libPath = filepath(config.libPath);
   const copyConfig = addon.fileDependencies;
 
-  const files = fs.readdirSync(libPath).map(async (filename) => {
+  const files = await fs.readdirSync(libPath).reduce(async (objP, filename) => {
+    const obj = await objP;
     const ext = fileExtension(filename);
     let importType;
 
@@ -259,8 +260,9 @@ async function getFileListFromConfig(config, addon) {
       output = trimPathSlashes(output.replace(exportPath, ''));
     }
 
-    return output;
-  });
+    obj[output] = importType;
+    return obj;
+  }, Promise.resolve({}));
 
   // There's a mismatch betwwen the files from libs and 
   // the files on the config... 
@@ -270,9 +272,13 @@ async function getFileListFromConfig(config, addon) {
     console.warn(`Following dependency files were not found: ${leftFiles.join(', ')}`);
   }
 
-  return await Promise.all(files);
+  return files;
 }
 
+/**
+ * @param {import('./c3ide.types.js').BuildConfig} config 
+ * @param {import('./c3ide.types.js').BuiltAddonConfig} addon 
+ */
 async function addonFromConfig(config, addon) {
   return {
     "is-c3-addon": true,
@@ -298,7 +304,7 @@ async function addonFromConfig(config, addon) {
       "addon.json",
       addon.icon ? addon.icon : "icon.svg",
       "editor.js",
-      ...(await getFileListFromConfig(config, addon)),
+      ...Object.keys(addon.fileDependencies),
     ],
   };
 }
@@ -640,20 +646,25 @@ function distribute(config) {
   zip.writeZip(`./dist/${config.id}-${config.version}.c3addon`);
 }
 
-export function readAddonConfig(tsAddonConfig = '', { loader = 'ts' } = {}) {
-  let config = new Function(
+export async function readAddonConfig(tsAddonConfig = '', { loader = 'ts' } = {}) {
+  const getConfig = new Function(
     esbuild.transformSync(tsAddonConfig, {
       format: 'iife',
       globalName: 'config',
       loader
     }).code + ' return config;'
   );
+  /** @type {import('./c3ide.types.js').BuiltAddonConfig} */
+  let config;
 
   try {
-    config = config().default;
+    config = getConfig().default;
   } catch (error) {
-    throw Error("Error on reading `addonConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
+    throw Error("Error on reading Addon Config. Please be sure to not execute external libraries from there." + "\n" + error);
   }
+
+  const dependencies = await getFileListFromConfig(_buildConfig, config);
+  config.fileDependencies = dependencies;
 
   for (const key in ACE_TYPES) {
     delete config[key];
@@ -663,9 +674,9 @@ export function readAddonConfig(tsAddonConfig = '', { loader = 'ts' } = {}) {
 }
 
 // Collection of ACEs by group for aces.json
-let aces;
+let aces = {};
 // Collection of ACEs to call on runtime
-let acesRuntime;
+let acesRuntime = aceDict();
 
 /** @type {import('./c3ide.types.js').BuiltAddonConfig} */
 let addonJson;
@@ -822,17 +833,51 @@ function parseScript(ts) {
  * @param {import('./c3ide.types.js').BuildConfig} config  
  * @returns {import('esbuild').Plugin} 
  */
-function parser(config) {
-  const parseFile = new RegExp("^" + filepath(config.sourcePath) + "(\\/|\\\\)\[^\\/\\\\]+\\.ts");
+function parseAddonConfig(config) {
   const addonScript = new RegExp(filepath(config.sourcePath, config.addonScript));
 
   return {
-    name: 'c3ide-parser',
+    name: 'c3framework-config',
     setup(build) {
-      aces = {}
-      acesRuntime = aceDict()
-      addonJson = {}
+      build.onLoad({ filter: addonScript }, async (config) => {
+        if (addonJson) {
+          return {
+            contents: "export default " + JSON.stringify(addonJson, null, 4)
+          }
+        }
 
+        const content = fs.readFileSync(config.path).toString('utf-8');
+        const inject = JSON.stringify(acesRuntime, null, 4).replace(/"(\(inst\) => inst\.[a-zA-Z0-9$_]+)"/, '$1');
+        const injected = content.replace(/(export\s+default\s+)([^;]+);/, `$1{\n...($2), \n...({Aces: ${inject}})\n};`);
+        const jsConfig = esbuild.transformSync(injected, {
+          loader: 'ts',
+          tsconfigRaw: tsConfig,
+        }).code;
+
+        try {
+          addonJson = await readAddonConfig(jsConfig, { loader: 'js' });
+        } catch (error) {
+          throw Error("Error on `addonConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
+        }
+
+        return {
+          contents: jsConfig
+        };
+      });
+    }
+  }
+}
+
+/**
+ * @param {import('./c3ide.types.js').BuildConfig} config  
+ * @returns {import('esbuild').Plugin} 
+ */
+function parseAces(config) {
+  const parseFile = new RegExp("^" + filepath(config.sourcePath) + "(\\/|\\\\)\[^\\/\\\\]+\\.ts");
+
+  return {
+    name: 'c3framework-aces',
+    setup(build) {
       build.onLoad({ filter: parseFile }, (args) => {
         let ts = fs.readFileSync(args.path).toString('utf-8');
 
@@ -844,31 +889,6 @@ function parser(config) {
         return parseScript(ts);
       });
 
-      build.onLoad({ filter: addonScript }, (config) => {
-        const content = fs.readFileSync(config.path).toString('utf-8');
-        const inject = JSON.stringify(acesRuntime, null, 4).replace(/"(\(inst\) => inst\.[a-zA-Z0-9$_]+)"/, '$1');
-        const injected = content.replace(/(export\s+default\s+)([^;]+);/, `$1{\n...($2), \n...({Aces: ${inject}})\n};`);
-        const jsConfig = esbuild.transformSync(injected, {
-          loader: 'ts',
-          tsconfigRaw: tsConfig,
-        }).code;
-
-        try {
-          addonJson = readAddonConfig(jsConfig, { loader: 'js' });
-        } catch (error) {
-          throw Error("Error on `addonConfig.ts`. Please be sure to not execute external libraries from there." + "\n" + error);
-        }
-
-        return {
-          contents: jsConfig
-        };
-      });
-
-      // build.onEnd(() => {
-      //   if (!devBuild) {
-      //     distribute(addonJson);
-      //   }
-      // })
     }
   };
 }
@@ -907,7 +927,10 @@ async function parseFile(file = '', config = {}, plugins = []) {
     entryPoints: [file],
     bundle: true,
     allowOverwrite: true,
-    plugins,
+    plugins: [
+      parseAddonConfig(config),
+      ...plugins,
+    ],
     write: false,
     tsconfigRaw: tsConfig,
     minify: config?.minify ?? true,
@@ -920,7 +943,7 @@ async function build() {
   ensureFoldersExists();
   createEmptyFiles();
 
-  const main = await parseFile(filepath(config.sourcePath, config.runtimeScript), config, [parser(config)]);
+  const main = await parseFile(filepath(config.sourcePath, config.runtimeScript), config, [parseAces(config)]);
 
   fs.writeFileSync("./export/c3runtime/behavior.js", main);
   fs.writeFileSync("./export/aces.json", JSON.stringify(acesFromConfig(aces), null, 2));
@@ -943,9 +966,10 @@ async function build() {
       const tsPath = v.trim().replace(/\.js$/, '.ts');
       const jsPath = v.trim().replace(/\.ts$/, '.js');
 
+      const path = filepath(config.sourcePath, tsPath);
       const outpath = filepath('./export', jsPath);
 
-      return await parseFile(filepath(config.sourcePath, tsPath), config).then((editor) => {
+      return await parseFile(path, config).then((editor) => {
         return fs.writeFileSync(outpath, editor, { encoding: 'utf-8' });
       });
     })
