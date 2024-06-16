@@ -8,5 +8,6 @@ export default {
     runtimeScript: 'runtime.ts',
     langPath: 'src/lang',
     libPath: 'src/libs',
+    defPath: 'src/',
     // TODO: Add export, examples, dist paths...
 }

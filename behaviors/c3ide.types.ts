@@ -14,6 +14,7 @@ export interface AddonConfig extends ProjectAddon {
         | "external-runtime-script"
         | "external-css"
     },
+    typeDefs?: string[],
     info: {
         Set: {
             IsOnlyOneAllowed: boolean;
@@ -41,6 +42,7 @@ export interface BuildConfig {
     runtimeScript?: string,
     langPath?: string,
     libPath?: string,
+    defPath: string
 }
 
 const camelCasedMap = new Map();
@@ -154,6 +156,10 @@ export function getEditorBehaviorClass(config: BuiltAddonConfig) {
 
                     this._info.AddFileDependency(dependency);
                 });
+            }
+
+            if (config.typeDefs) {
+                this._info.SetTypeScriptDefinitionFiles(config.typeDefs);
             }
 
             if (config.info && config.info.Set) {

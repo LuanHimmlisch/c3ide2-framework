@@ -227,6 +227,26 @@ async function processDependencyFile(config, filename, ext, type) {
   return output;
 }
 
+/**
+ * @param {import('./c3ide.types.js').BuildConfig} config 
+ */
+function getTypeDefinitions(config) {
+  const definitions = fs.readdirSync(filepath(config.defPath))
+    .filter((v => v.endsWith('.d.ts')))
+    .map((filename) => {
+      const defPath = config.defPath;
+      const exportPath = './export';
+
+      const input = filepath(defPath, '/', filename);
+      const output = input.replace(filepath(defPath), filepath(exportPath, 'c3runtime/'))
+
+      writeFileRecursively(output, fs.readFileSync(input));
+
+      return trimPathSlashes(output.replace(filepath(exportPath), ''));
+    });
+
+  return definitions;
+}
 
 /**
  * @param {import('./c3ide.types.js').BuildConfig} config 
@@ -663,12 +683,19 @@ export async function readAddonConfig(tsAddonConfig = '', { loader = 'ts' } = {}
     throw Error("Error on reading Addon Config. Please be sure to not execute external libraries from there." + "\n" + error);
   }
 
-  const dependencies = await getFileListFromConfig(_buildConfig, config);
-  config.fileDependencies = dependencies;
-
+  // * Remove ACEs
   for (const key in ACE_TYPES) {
     delete config[key];
   }
+
+  // * Dependencies files
+  const dependencies = await getFileListFromConfig(_buildConfig, config);
+  config.fileDependencies = dependencies;
+
+  // * Type definitions
+  const typeDefs = getTypeDefinitions(_buildConfig);
+
+  config.typeDefs = typeDefs;
 
   return config;
 }
@@ -911,6 +938,7 @@ async function loadBuildConfig() {
     libPath: 'src/libs',
     addonScript: 'addon.ts',
     runtimeScript: 'runtime.ts',
+    defPath: 'src/'
   };
 
   if (fs.existsSync('./c3ide.config.js')) {
