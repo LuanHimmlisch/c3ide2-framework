@@ -1,4 +1,4 @@
-/** @type {import('./c3ide.types').BuildConfig} */
+/** @type {import("c3-framework").BuildConfig} */
 export default {
     minify: false,
     host: 'https://localhost',
