@@ -1,4 +1,4 @@
-import { AddonConfig } from "../c3ide.types";
+import { AddonConfig, BuiltAddonConfig } from "c3-framework";
 
 // @ts-ignore
 const Config = {
@@ -42,5 +42,5 @@ const Config = {
   }
 } as AddonConfig;
 
-export default Config;
+export default Config as BuiltAddonConfig;
 
