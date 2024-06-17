@@ -19,6 +19,6 @@
   },
   "homepage": "https://github.com/ConstructFund/c3ide2-framework#readme",
   "dependencies": {
-    "c3-framework": "github:MasterPose/c3-framework"
+    "c3-framework": "github:MasterPose/c3-framework-core"
   }
 }
