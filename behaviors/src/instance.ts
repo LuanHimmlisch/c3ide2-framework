@@ -1,5 +1,5 @@
-import { AceClass, Action, Condition, Trigger, Expression, Param } from "../c3ide.types";
-import { getBehaviorInstanceClass as parent } from '../c3ide.types';
+import { AceClass, Behavior, Condition, Param } from "c3-framework";
+import Config from "./addon";
 
 const opts = [
   'test',
@@ -8,12 +8,12 @@ const opts = [
 ];
 
 @AceClass()
-class Instance extends parent() {
+class Instance extends Behavior.Instance(Config) {
   constructor() {
     super();
   }
 
-  @Condition()
+  @Condition('Is Enabled')
   isEnabled() {
     return true;
   }
@@ -25,7 +25,7 @@ class Instance extends parent() {
         { test: 'Test' },
         { something: 'Something' },
         { another: 'Another' },
-      ]
+      ],
     })
     tag: combo
   ) {

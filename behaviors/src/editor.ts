@@ -1,6 +1,6 @@
-import { BuiltAddonConfig, initEditorAddon } from "../c3ide.types";
+import { BuiltAddonConfig, initEditor } from "c3-framework";
 import Config from "./addon";
 
-initEditorAddon(
+initEditor(
   Config as BuiltAddonConfig
 );

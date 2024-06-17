@@ -1,4 +1,4 @@
-import { BuiltAddonConfig, initAddon } from "../c3ide.types";
+import { BuiltAddonConfig, initRuntime } from "c3-framework";
 import Config from "./addon";
 import Instance from "./instance";
 
@@ -10,7 +10,7 @@ import Instance from "./instance";
  * - Call the `loadAddonClass()` at the end
  * See the `initAddon` function for reference.
  */
-initAddon(
+initRuntime(
     Config as BuiltAddonConfig,
     {
         Instance
