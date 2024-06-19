@@ -1,7 +1,6 @@
-import { AddonConfig, BuiltAddonConfig } from "c3-framework";
+import { BehaviorConfig, BuiltAddonConfig } from "c3-framework";
 
-// @ts-ignore
-const Config = {
+const Config: BehaviorConfig = {
   addonType: "behavior",
   id: "ExampleAddon",
   name: "Example Addon",
@@ -39,8 +38,8 @@ const Config = {
   ],
   aceCategories: {
     general: "General",
-  }
-} as AddonConfig;
+  },
+};
 
 export default Config as BuiltAddonConfig;
 
